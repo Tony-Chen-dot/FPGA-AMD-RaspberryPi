@@ -1,0 +1,16 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>机械臂串口调试</title><style>__STYLE__</style>
+<main class="app-shell"><header class="topbar"><div><h1>机械臂串口调试</h1><p id="status" class="status-line">正在加载…</p></div>
+<label class="move-time-control">单次动作时间 <input id="manual" type="number" min="0" max="9999" value="1000"> ms</label></header>
+<section class="connection"><label>串口 <input id="device" list="ports" value="/dev/serial0"></label><datalist id="ports"></datalist><button id="connect">连接 / 重新连接</button>
+<span>115200 · 8N1 · 物理引脚 8 / 9 / 10</span></section>
+<p class="hint">位置为 P 值（0500～2500），不是角度。拖动只修改参数，点击姿态按钮才运动；姿态按钮仅控制 000～004，气泵单独操作。</p>
+<section id="cards" class="pose-grid"></section>
+<section class="timing-panel"><h2>完整流程时序</h2><p class="hint">吸取 → 转移 → 下降 → 释放 → 复位。每阶段发送 000～005 后等待；等待时间不与 T 叠加。</p>
+<div id="timing" class="timing-grid"></div><p id="timing-warning" class="hint"></p></section>
+<section class="bottom-actions"><button id="reset" class="secondary-button">执行复位姿态</button><label class="sequence-target-control">分支 <select id="target"><option value="right">右侧</option><option value="left">左侧</option></select></label>
+<button id="sequence" class="primary-button">运行完整流程</button><button id="on" class="secondary-button">吸取 · 005 P2500</button><button id="off" class="secondary-button">释放 · 005 P0500</button><button id="neutral" class="secondary-button">气泵复位 · P1500</button><button id="stop" class="stop-button">停止关节 / 取消流程</button></section>
+<p class="hint">停止关节不会释放气泵。完整流程的末步按 FPGA 向 005 发 P1500，其物理含义需在实际模块上确认。</p>
+<section class="message-panel" aria-live="polite"><div id="error" style="color:#d74335"></div><div id="message">就绪</div><div id="pump"></div><div id="save-status"></div></section>
+<details class="timing-panel"><summary>串口发送日志（最近 120 条）</summary><pre id="logs"></pre></details></main>
+<script>__JS__</script></html>

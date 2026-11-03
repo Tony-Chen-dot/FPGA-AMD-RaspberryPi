@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>多产线智能质检上位机</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=20261028-preview-3x2-thumb" />
+    <script defer src="/static/vendor/vue.global.prod.js?v=20260526c"></script>
+    <script defer src="/static/vendor/vue-demi.iife.js?v=20260526c"></script>
+    <script defer src="/static/vendor/pinia.iife.prod.js?v=20260526c"></script>
+    <script defer src="/static/vendor/echarts.min.js?v=20260526c"></script>
+    <script defer src="/static/vendor/marked.min.js?v=15.0.12"></script>
+    <script defer src="/static/vendor/purify.min.js?v=3.2.6"></script>
+    <script defer src="/static/js/dashboard.js?v=20261028-image-url-fix"></script>
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <div class="app-shell">
+        <header class="topbar">
+          <div>
+            <h1>多产线智能质检上位机</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="nav-pill" :class="{ active: activeView === 'main' }" @click="activeView = 'main'">
+              产线主看板
+            </button>
+            <button class="nav-pill" :class="{ active: activeView === 'history' }" @click="activeView = 'history'">
+              历史统计视图
+            </button>
+            <button class="nav-pill" :class="{ active: activeView === 'assistant' }" @click="activeView = 'assistant'">
+              AI 分析视图
+            </button>
+            <button class="ghost-btn" @click="reconnectAll">{{ reconnectBusy ? '正在重建连接' : '重建实时连接' }}</button>
+          </div>
+        </header>
+
+        <section class="line-switcher" aria-label="生产线切换">
+          <div class="line-switcher-heading">
+            <strong>产线监控</strong>
+          </div>
+          <div class="line-switcher-buttons" role="group" aria-label="选择查看的产线">
+            <button v-for="line in productionLines" :key="line.id" type="button"
+              class="line-button" :class="{ active: selectedLineId === line.id }"
+              :data-line-id="line.id" :aria-pressed="selectedLineId === line.id"
+              :disabled="assistantLoading" @click="switchProductionLine(line.id)">
+              <strong>{{ line.name }}</strong>
+              <small :class="line.camera_assigned ? 'line-assigned' : 'line-no-signal'">
+                {{ line.camera_assigned ? '当前采集' : '无信号' }}
+              </small>
+            </button>
+          </div>
+        </section>
+
+        <section v-if="activeView === 'main'" class="dashboard-grid">
+          <article class="panel video-panel">
+            <div class="panel-head">
+              <div>
+                <h2>产线 {{ selectedLineId }} · 实时检测</h2>
+              </div>
+              <div class="status-row">
+                <span class="badge" :class="device.online ? 'ok' : 'warn'">
+                  {{ !cameraAssigned ? '无信号' : (device.online ? '采集在线' : '等待信号') }}
+                </span>
+                <span class="badge neutral">{{ socketConnected ? '实时已连接' : '实时连接中' }}</span>
+                <span class="badge neutral">{{ !cameraAssigned ? '未接入摄像头' : (mjpegConnected ? '视频已连接' : '等待视频') }}</span>
+              </div>
+            </div>
+            <div class="video-stage">
+              <img
+                v-if="cameraAssigned && mjpegStreamUrl"
+                ref="mjpegEl"
+                class="mjpeg-stream"
+                :src="mjpegStreamUrl"
+                alt="实时摄像头画面"
+                @load="handleMjpegLoad"
+                @error="handleMjpegError"
+              />
+              <canvas v-if="cameraAssigned" ref="overlayEl"></canvas>
+              <div v-if="cameraAssigned" class="live-hud top-left">
+                <span>后台检测圆数量</span>
+                <strong>{{ device.circle_count ?? 0 }}</strong>
+              </div>
+              <div v-if="triggerOverlayVisible || sentStatusVisible" class="trigger-peek">
+                <img v-if="triggerOverlayVisible" :src="device.trigger_overlay.image_data" alt="检测触发截图" />
+                <div v-if="sentStatusVisible" class="sent-flash">已发送</div>
+              </div>
+              <div v-if="!cameraAssigned || !device.online || !mjpegConnected" class="video-mask">
+                <h3>{{ cameraAssigned ? '正在等待视频流' : '无信号' }}</h3>
+              </div>
+            </div>
+            <div class="video-meta">
+              <span>最近帧：{{ latestResult?.frame_id || '--' }}</span>
+              <span>最近上报：{{ formatAgo(device.last_seen_at) }}</span>
+              <span>Zynq 纯推理：{{ latestResult?.pipeline_timing?.board_inference_ms?.toFixed(1) || '--' }} ms</span>
+              <span>Zynq 往返：{{ latestResult?.pipeline_timing?.board_roundtrip_ms?.toFixed(1) || '--' }} ms</span>
+              <span>触发到页面：{{ latestResult?.pipeline_timing?.trigger_to_dashboard_ms?.toFixed(1) || '--' }} ms</span>
+              <span v-if="device.trigger_queue?.warning" class="danger-text">
+                推理队列告警：{{ device.trigger_queue.depth }}/{{ device.trigger_queue.capacity }}
+              </span>
+            </div>
+          </article>
+
+          <article class="panel metrics-panel">
+            <div class="panel-head">
+              <div>
+                <h2>核心指标</h2>
+              </div>
+            </div>
+            <div class="metrics-grid">
+              <div class="metric-card metric-cyan">
+                <span>总检测数</span>
+                <strong class="metric-value">{{ summary.total_count }}</strong>
+              </div>
+              <div class="metric-card metric-green">
+                <span>良品数</span>
+                <strong class="metric-value">{{ summary.good_count }}</strong>
+              </div>
+              <div class="metric-card metric-red">
+                <span>不良数</span>
+                <strong class="metric-value">{{ summary.bad_count }}</strong>
+              </div>
+              <div class="metric-card metric-gold">
+                <span>良率</span>
+                <strong class="metric-value">{{ summary.yield_rate.toFixed(2) }}%</strong>
+              </div>
+            </div>
+            <div class="metrics-footer">
+              <span>平均推理耗时 {{ summary.avg_inference_ms.toFixed(2) }} ms</span>
+              <span>系统运行 {{ formatDuration(uptimeSeconds) }}</span>
+            </div>
+          </article>
+
+          <article class="panel recent-panel">
+            <div class="panel-head">
+              <div>
+                <h2>最近 3 次推理图片</h2>
+              </div>
+            </div>
+            <div class="recent-image-list">
+              <div v-for="item in recentResults" :key="item.id" class="recent-image-card">
+                <div class="recent-image-frame">
+                  <img v-if="item.image_url" :src="cacheBust(item.image_url, item.frame_id)" :alt="item.frame_id" />
+                  <div v-else class="recent-image-empty">暂无推理图片</div>
+                </div>
+                <div class="recent-image-info">
+                  <div class="recent-top">
+                    <span class="recent-tag">{{ item.result }}</span>
+                    <span>{{ item.frame_id }}</span>
+                  </div>
+                  <strong>{{ item.top_labels.join(' / ') || '本次为良品' }}</strong>
+                  <small>
+                    {{ formatTime(item.timestamp) }} · 推理 {{ item.inference_ms.toFixed(2) }} ms ·
+                    全链路 {{ item.pipeline_timing?.trigger_to_dashboard_ms?.toFixed(1) || '--' }} ms
+                  </small>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel status-panel">
+            <div class="panel-head">
+              <div>
+                <h2>设备与模型状态</h2>
+              </div>
+            </div>
+            <div class="status-grid">
+              <div class="status-card">
+                <span>推理加速器</span>
+                <strong>{{ device.board_name }}</strong>
+              </div>
+              <div class="status-card">
+                <span>RJ45 通信</span>
+                <strong>{{ device.comm_state }}</strong>
+              </div>
+              <div class="status-card">
+                <span>模型状态</span>
+                <strong>{{ device.model_name }}</strong>
+              </div>
+              <div class="status-card">
+                <span>流媒体状态</span>
+                <strong>{{ device.stream_state }}</strong>
+              </div>
+              <div class="status-card">
+                <span>当前圆数量</span>
+                <strong>{{ device.circle_count ?? 0 }}</strong>
+              </div>
+              <div class="status-card">
+                <span>目标圆坐标</span>
+                <strong>{{ device.selected_circle ? `${device.selected_circle.x}, ${device.selected_circle.y}` : '--' }}</strong>
+              </div>
+              <div class="status-card">
+                <span>缺陷类别</span>
+                <strong>{{ supportedDefects.join(' / ') }}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel mini-chart-panel">
+            <div class="panel-head">
+              <div>
+                <h2>当前缺陷铝片分布</h2>
+              </div>
+            </div>
+            <div ref="miniChartEl" class="chart"></div>
+          </article>
+        </section>
+
+        <section v-else-if="activeView === 'history'" class="history-layout">
+          <div class="history-top">
+            <article class="panel history-chart-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>全周期检测趋势</h2>
+                </div>
+                <button
+                  type="button"
+                  class="ghost-btn trend-load-button"
+                  :disabled="trendLoading"
+                  @click="loadTrend"
+                >{{ trendButtonLabel }}</button>
+              </div>
+              <div ref="trendChartEl" class="chart large"></div>
+            </article>
+
+            <article class="panel history-chart-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>缺陷类型排行</h2>
+                </div>
+              </div>
+              <div ref="yieldChartEl" class="chart large"></div>
+            </article>
+          </div>
+
+          <article class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h2>最近检测记录</h2>
+              </div>
+            </div>
+            <div class="records-table-wrap">
+              <table class="records-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>帧号</th>
+                    <th>结果</th>
+                    <th>缺陷数</th>
+                    <th>缺陷标签</th>
+                    <th>耗时</th>
+                    <th>分辨率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="record in history.records" :key="record.id">
+                    <td>{{ formatTime(record.timestamp) }}</td>
+                    <td>{{ record.frame_id }}</td>
+                    <td>
+                      <span class="inline-tag" :class="record.result.toLowerCase()">{{ record.result }}</span>
+                    </td>
+                    <td>{{ record.defect_count }}</td>
+                    <td>{{ record.labels }}</td>
+                    <td>{{ record.inference_ms.toFixed(2) }} ms</td>
+                    <td>{{ record.width }} × {{ record.height }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section v-else class="assistant-layout">
+          <aside class="panel assistant-history-panel">
+            <div class="assistant-panel-head">
+              <div>
+                <h2>对话历史</h2>
+              </div>
+              <button class="icon-btn" title="新建对话" @click="newAssistantConversation">+</button>
+            </div>
+            <div class="assistant-history-list">
+              <button
+                v-for="conversation in assistantConversations"
+                :key="conversation.id"
+                class="assistant-history-item"
+                :class="{ active: conversation.id === assistantConversationId }"
+                @click="selectAssistantConversation(conversation.id)"
+              >
+                <strong>{{ conversation.title }}</strong>
+                <span>{{ conversation.message_count }} 条消息 · {{ formatTime(conversation.updated_at) }}</span>
+              </button>
+              <div v-if="!assistantConversations.length" class="assistant-empty">还没有对话</div>
+            </div>
+          </aside>
+
+          <main class="panel assistant-chat-panel">
+            <div class="assistant-chat-head">
+              <div>
+                <h2>{{ activeAssistantConversation?.title || '新对话' }}</h2>
+              </div>
+              <div class="assistant-status-stack">
+                <span class="badge" :class="assistantStatus.llm_configured ? 'ok' : 'warn'">
+                  {{ assistantStatus.llm_configured ? '模型已配置' : '待配置 Key' }}
+                </span>
+                <span class="badge neutral">{{ assistantDatabaseStatus.record_count || 0 }} 条记录</span>
+              </div>
+            </div>
+
+            <div ref="assistantMessagesEl" class="assistant-messages">
+              <div v-if="!assistantMessages.length" class="assistant-welcome">
+                <span class="assistant-signal">AI</span>
+                <div>
+                  <h3>从数据开始分析</h3>
+                </div>
+              </div>
+              <article
+                v-for="message in assistantMessages"
+                :id="`assistant-message-${message.id}`"
+                :key="message.id"
+                class="assistant-message"
+                :class="message.role"
+              >
+                <div class="assistant-message-meta">
+                  <span>{{ message.role === 'user' ? '你' : '分拣 AI' }}</span>
+                  <time>{{ formatTime(message.created_at) }}</time>
+                </div>
+                <div
+                  v-if="message.role === 'assistant'"
+                  class="assistant-message-content markdown-content"
+                  v-html="renderAssistantMarkdown(message.content)"
+                ></div>
+                <div v-else class="assistant-message-content">{{ message.content }}</div>
+              </article>
+              <div v-if="assistantLoading" class="assistant-thinking">
+                <span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>
+                正在分析
+              </div>
+            </div>
+
+            <form class="assistant-composer" @submit.prevent="sendAssistantMessage">
+              <textarea
+                ref="assistantInputEl"
+                v-model="assistantInput"
+                rows="3"
+                placeholder="输入你想分析的分拣问题..."
+                :disabled="assistantLoading"
+                @keydown.enter.exact.prevent="sendAssistantMessage"
+              ></textarea>
+              <div class="assistant-composer-actions">
+                <div class="assistant-input-tools">
+                  <button type="button" class="ghost-btn small" :class="{ active: assistantListening }" @click="toggleAssistantListening">
+                    {{ assistantListening ? '停止听写' : '语音输入' }}
+                  </button>
+                  <label class="speak-toggle"><input v-model="assistantSpeak" type="checkbox" /> 回答后播报</label>
+                  <span v-if="assistantError" class="assistant-error">{{ assistantError }}</span>
+                </div>
+                <button type="submit" class="send-btn" :disabled="assistantLoading || !assistantInput.trim()">发送</button>
+              </div>
+            </form>
+          </main>
+
+          <aside class="panel assistant-outline-panel">
+            <div class="assistant-panel-head">
+              <div>
+                <h2>对话定位</h2>
+              </div>
+            </div>
+            <div class="assistant-outline-list">
+              <button
+                v-for="item in assistantOutline"
+                :key="item.id"
+                class="assistant-outline-item"
+                @click="jumpToAssistantMessage(item.id)"
+              >
+                <span class="outline-index">{{ item.index }}</span>
+                <span>{{ item.content }}</span>
+              </button>
+              <div v-if="!assistantOutline.length" class="assistant-empty">暂无消息</div>
+            </div>
+            <div class="assistant-data-card">
+              <span>本次数据快照</span>
+              <strong>{{ assistantDatabaseStatus.record_count || 0 }} 条检测记录</strong>
+              <small>{{ assistantDatabaseStatus.detection_count || 0 }} 条缺陷明细</small>
+              <small>最近更新 {{ formatTime(assistantDatabaseStatus.last_ts) }}</small>
+            </div>
+          </aside>
+
+          <aside class="panel assistant-quick-panel">
+            <div class="assistant-panel-head">
+              <div>
+                <h2>快捷提问</h2>
+              </div>
+            </div>
+            <div class="assistant-quick-list">
+              <button
+                v-for="item in assistantQuickPrompts"
+                :key="item.label"
+                type="button"
+                class="assistant-quick-item"
+                :disabled="assistantLoading"
+                @click="useAssistantQuickPrompt(item.prompt)"
+              >
+                <span>{{ item.category }}</span>
+                <strong>{{ item.label }}</strong>
+              </button>
+            </div>
+          </aside>
+        </section>
+      </div>
+    </div>
+  </body>
+</html>
