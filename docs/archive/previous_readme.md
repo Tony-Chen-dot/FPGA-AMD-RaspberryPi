@@ -1,4 +1,4 @@
-> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 README.md 和 docs/project_structure.md 为准。
+> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 readme.md 和 docs/project_structure.md 为准。
 
 # Raspberry
 
@@ -251,7 +251,7 @@ chmod +x monitor.sh
 
 旧角度格式参数首次读取会备份后替换为新的 FPGA 默认参数；损坏的新格式会报错。若在树莓派的 `test/settings.json` 中调好了姿态，可先停止控制程序，再复制该文件到本项目的 `servo_dashboard/data/servo_params.json`；格式相同。
 
-详细指令与动作表见 [pose_runner/README.md](pose_runner/README.md)。每次上传新版后重新执行 `./start_servo_dashboard.sh` 会停止本工程旧后端并检查新接口版本。
+详细指令与动作表见 [pose_runner/readme.md](pose_runner/readme.md)。每次上传新版后重新执行 `./start_servo_dashboard.sh` 会停止本工程旧后端并检查新接口版本。
 
 ## 查看圆检测和视频流实时日志
 

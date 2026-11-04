@@ -1,4 +1,4 @@
-> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 README.md 和 docs/project_structure.md 为准。
+> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 readme.md 和 docs/project_structure.md 为准。
 
 # 智能质检比赛可视化系统
 

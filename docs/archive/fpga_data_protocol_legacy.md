@@ -1,4 +1,4 @@
-> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 README.md 和 docs/project_structure.md 为准。
+> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 readme.md 和 docs/project_structure.md 为准。
 
 # FPGA / ARM 到树莓派的数据接入说明
 

@@ -1,6 +1,6 @@
-> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 README.md 和 docs/project_structure.md 为准。
+> 历史资料：保留当时的记录，目录和控制方式可能已过时。当前操作请以根目录 readme.md 和 docs/project_structure.md 为准。
 
-> 2026-10-25 更新：FPGA 副本的活动机械臂入口已切换到 `arm_control/serial_arm.py`，使用115200 ASCII UART，关节000～004、气泵005。当前部署及操作以 README 的“机械臂与气泵（众灵 ASCII UART）”章节和 pose_runner/README.md 为准。下文旧 I²C / USB继电器内容为历史记录，不再描述当前活动控制路径。
+> 2026-10-25 更新：FPGA 副本的活动机械臂入口已切换到 `arm_control/serial_arm.py`，使用115200 ASCII UART，关节000～004、气泵005。当前部署及操作以 README 的“机械臂与气泵（众灵 ASCII UART）”章节和 pose_runner/readme.md 为准。下文旧 I²C / USB继电器内容为历史记录，不再描述当前活动控制路径。
 
 # Raspberry 项目交接说明
 
@@ -180,7 +180,7 @@ free -h
 
 - 用户决策：只修正 `site_config.sh` 已被 `.gitignore` 忽略这一错误声明。
 - 用户决策：暂不清理 `.venv`、日志、缓存或其他导致仓库臃肿的非致命问题。
-- 对应修改：更新根 `README.md` 和 `site_config.sh` 文件头，明确 `site_config.sh` 当前受 Git 跟踪，禁止提交真实 DeepSeek Key、口令或其他敏感信息；现场临时填写只能保留为未提交修改，并建议提交前检查差异。由于脚本直接设置 Key，文档没有声称预先设置的同名环境变量可以覆盖它。
+- 对应修改：更新根 `readme.md` 和 `site_config.sh` 文件头，明确 `site_config.sh` 当前受 Git 跟踪，禁止提交真实 DeepSeek Key、口令或其他敏感信息；现场临时填写只能保留为未提交修改，并建议提交前检查差异。由于脚本直接设置 Key，文档没有声称预先设置的同名环境变量可以覆盖它。
 - 未做事项：没有改变 `site_config.sh` 的 Git 跟踪状态，没有新增根 `.gitignore`，没有删除或取消跟踪任何环境和运行产物。
 
 ### 2026-08-18：建立持续交接记录
@@ -315,7 +315,7 @@ free -h
 - 失败策略：STARTUP_OFF 或 ON 最终无法确认时以退出码 `21` 阻止机械臂进入 Forward。目标位 OFF 最终无法确认时，按用户决定完成释放等待并返回 Preparation，然后以退出码 `20` 标记动作失败；生产外层识别该退出码后不再启动第二轮恢复，保证不会突破“首次 + 两次重连”的上限。下一动作会重新从 STARTUP_OFF 确认开始。已确认 OFF 时上下文关闭只关闭串口句柄，不重复发送 shutdown OFF。
 - 实时日志：生产动作子进程不再 `capture_output`，机械臂步骤、气泵发送/接收、重连和底层 I2C/串口错误会实时继承到 `logs/circle-camera.log`，不再只留下 `CalledProcessError` 摘要。
 - 新增根目录 `monitor.sh`：该脚本只读取 `logs/circle-camera.log`、8088 `server.log`、进程状态、udev 节点和内核 USB 事件，不打开串口、不访问 I2C、不获取硬件锁。终端精简显示 `[QUEUE]`、`[ARM]`、`[PUMP]`、`[USB]`、`[ALARM]`、`[PROC]`；PID/串口节点只在变化时打印。`Ctrl+C` 只终止监视脚本及其 `tail/awk/journalctl` 子进程；无内核日志权限时降级为应用日志监视，可用 `sudo ./monitor.sh` 获取完整 USB 事件。
-- 配置与文档：`pump_control/pump_config.json` 默认端口改为 `auto` 并记录反馈/重连参数；根 README 和 `pose_runner/README.md` 已同步反馈协议、FIFO 参数和监视命令。`run_all.sh` 启动摘要会显示动作总容量。
+- 配置与文档：`pump_control/pump_config.json` 默认端口改为 `auto` 并记录反馈/重连参数；根 README 和 `pose_runner/readme.md` 已同步反馈协议、FIFO 参数和监视命令。`run_all.sh` 启动摘要会显示动作总容量。
 - 验证：Windows Python 3.13.12 下完整 `unittest discover -s tests -v` 共 93 项全部通过，覆盖协议字节与校验、正常反馈、分段和脏数据、错误通道/校验/无响应、重枚举后查询、严格两次重连、OFF 失败只回程一次、OFF 与 Preparation 同时失败、动作总容量 3、FIFO 顺序和监视脚本只读约束。Python 源码直接编译检查和 `git diff --check` 通过。当前 Windows 的 `bash` 指向未安装发行版的 WSL，无法执行 `bash -n`；部署到树莓派后须先运行 `bash -n monitor.sh circle-camera/run_circle_camera.sh run_all.sh site_config.sh`。
 - 部署前风险：此前树莓派现场存在带“双 OFF”逻辑的远端版本，与当时桌面工程不一致。上传前必须先比对远端三个核心文件并确认没有需要保留的现场独有修改；部署后首次测试必须清场，并同时运行 `sudo ./monitor.sh` 观察反馈帧和 USB `EMI?` 事件。软件重连不能替代短屏蔽线、磁环、线束隔离、可靠供电或硬件失效安全。
 

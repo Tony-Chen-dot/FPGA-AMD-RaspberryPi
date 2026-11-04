@@ -8,8 +8,9 @@ import re
 import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULES = ('common', 'dashboard', 'docs', 'requirements', 'robot', 'scripts', 'tests', 'tools', 'vision', 'voice')
-ENTRYPOINTS = ('README.md', '.gitignore', '.gitattributes', 'config.sh', 'requirements.txt',
+MODULES = ('common', 'dashboard', 'docs', 'requirements', 'robot', 'scripts', 'tests', 'tools', 'vision', 'voice',
+           'sim', 'build', 'board', 'data', 'skill', 'report')
+ENTRYPOINTS = ('readme.md', 'license', 'handoff.md', '.gitignore', '.gitattributes', 'config.sh', 'requirements.txt',
               'install.sh', 'start_all.sh', 'stop_all.sh', 'start_robot_debug.sh', 'stop_robot_debug.sh',
               'reset_database.sh')
 
